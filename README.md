@@ -51,15 +51,15 @@ AI-powered intelligence layer for Polymarket. Base Mini App + web front-end buil
 ## Architecture at a Glance
 ```mermaid
 flowchart LR
-  user[Client<br/>Base Mini App / Web] --> app[Next.js App Router<br/>(Edge + Node routes)]
-  app --> api[API routes & server actions]
-  api --> domain[Domain services<br/>(markets, insights, watchlists, contributions)]
+  user["Client (Base Mini App / Web)"] --> app["Next.js App Router (Edge + Node)"]
+  app --> api["API routes + server actions"]
+  api --> domain["Domain services: markets, insights, watchlists, contributions"]
   domain --> prisma[(Prisma proxy)]
-  prisma --> db[(SQLite app.db<br/>or Cloudflare D1)]
-  domain --> polymarket[Polymarket HTTP/WS<br/>market data]
-  domain --> ai[FLock/Qwen<br/>AI inference]
-  ai --> guardrails[Guardrails & rate limits]
-  api --> logging[Structured logging + metrics]
+  prisma --> db[(SQLite app.db or Cloudflare D1)]
+  domain --> polymarket["Polymarket HTTP/WS data"]
+  domain --> ai["FLock/Qwen AI inference"]
+  ai --> guardrails["Guardrails + rate limits"]
+  api --> logging["Structured logging + metrics"]
 ```
 
 ## Data Lifecycle & Caching
