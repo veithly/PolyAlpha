@@ -8,6 +8,13 @@ import { subscribeMarketTrades, computeSmartPulse, fetchOrderbookSnapshot } from
 export const dynamic = "force-dynamic";
 
 async function handler(request: NextRequest) {
+  if (process.env.POLYMARKET_WS_ENABLED !== "true") {
+    return failure(
+      "WS_DISABLED",
+      "Realtime market stream is disabled in this environment.",
+      { status: 503 },
+    );
+  }
   if (request.headers.get("accept") !== "text/event-stream") {
     return failure("INVALID_REQUEST", "Accept: text/event-stream required", {
       status: 400,

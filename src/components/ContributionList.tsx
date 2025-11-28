@@ -346,6 +346,7 @@ export function ContributionList({ marketId, walletAddress }: Props) {
           display: "flex",
           flexDirection: "column",
           gap: 12,
+          paddingBottom: "calc(96px + env(safe-area-inset-bottom, 0px))",
         }}
       >
         <textarea
@@ -379,18 +380,35 @@ export function ContributionList({ marketId, walletAddress }: Props) {
             padding: 12,
           }}
         />
-        <button
-          type="submit"
-          className="pill-button pill-button--primary"
-          disabled={!walletAddress || !content.trim()}
+        <div
+          style={{
+            position: "sticky",
+            bottom: 0,
+            paddingTop: 8,
+            paddingBottom: "calc(12px + env(safe-area-inset-bottom, 0px))",
+            background: "linear-gradient(180deg, rgba(244,247,255,0), var(--color-surface) 40%)",
+            borderTop: "1px solid var(--color-border-soft)",
+            backdropFilter: "blur(2px)",
+            marginLeft: -2,
+            marginRight: -2,
+            paddingLeft: 2,
+            paddingRight: 2,
+          }}
         >
-          Submit analysis
-        </button>
-        {!walletAddress && (
-          <p className="muted" style={{ fontSize: "0.8rem", margin: 0 }}>
-            Connect your Base wallet to post or upvote community takes.
-          </p>
-        )}
+          <button
+            type="submit"
+            className="pill-button pill-button--primary"
+            disabled={!walletAddress || !content.trim()}
+            style={{ width: "100%" }}
+          >
+            Submit analysis
+          </button>
+          {!walletAddress && (
+            <p className="muted" style={{ fontSize: "0.8rem", margin: "6px 0 0" }}>
+              Connect your Base wallet to post or upvote community takes.
+            </p>
+          )}
+        </div>
       </form>
     </section>
   );

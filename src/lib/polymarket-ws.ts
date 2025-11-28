@@ -1,5 +1,7 @@
 import WebSocket from "ws";
 
+const WS_ENABLED = process.env.POLYMARKET_WS_ENABLED === "true";
+
 type Subscription = {
   marketId: string;
   onData: (payload: any) => void;
@@ -13,6 +15,7 @@ let socket: WebSocket | null = null;
 const subscribers = new Map<string, Set<(p: any) => void>>();
 
 function ensureSocket() {
+  if (!WS_ENABLED) return;
   if (socket && socket.readyState === WebSocket.OPEN) return;
   socket = new WebSocket(WS_URL);
   socket.on("open", () => {
@@ -56,7 +59,7 @@ export function subscribeMarketTrades({
   marketId,
   onData,
 }: Subscription): () => void {
-  if (!marketId) return () => {};
+  if (!marketId || !WS_ENABLED) return () => {};
   ensureSocket();
   if (!subscribers.has(marketId)) {
     subscribers.set(marketId, new Set());

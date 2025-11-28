@@ -8,11 +8,21 @@ import {
   getUsageCount,
   incrementUsage,
 } from '@/domain/qa/quota';
-import { askAiQuestion } from '@/lib/ai';
+import { askAiQuestion, currentProvider } from '@/lib/ai';
 import { isAnswerSafe, isQuestionAllowed, redactAnswer } from '@/lib/guardrails';
 import { failure, success } from '@/lib/http';
 import { withApiLogging } from '@/lib/logging';
 import type { MarketDetail } from '@/domain/types';
+
+async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  let timer: NodeJS.Timeout;
+  const timeout = new Promise<T>((resolve) => {
+    timer = setTimeout(() => resolve(fallback), ms);
+  });
+  const result = await Promise.race([promise.catch(() => fallback), timeout]);
+  clearTimeout(timer!);
+  return result as T;
+}
 
 const handler = async (request: NextRequest) => {
   const startedAt = Date.now();
@@ -43,8 +53,8 @@ const handler = async (request: NextRequest) => {
       );
     }
     const dateKey = new Date().toISOString().slice(0, 10);
-    const limit = await getEffectiveDailyLimit(walletAddress);
-    const used = await getUsageCount(walletAddress, dateKey);
+    const limit = await withTimeout(getEffectiveDailyLimit(walletAddress), 1200, 10);
+    const used = await withTimeout(getUsageCount(walletAddress, dateKey), 1200, 0);
 
     if (used >= limit) {
       logTelemetry({
@@ -85,36 +95,71 @@ const handler = async (request: NextRequest) => {
           'General AI query without a specific market context.',
       };
     } else {
-      detail = await fetchMarketDetail(payload.marketId!);
+      try {
+        detail = await fetchMarketDetail(payload.marketId!);
+      } catch (error) {
+        console.warn('[api] ask market detail fetch failed, falling back', error);
+      }
       if (!detail) {
-        return failure('NOT_FOUND', 'Market not found.', { status: 404 });
+        // fall back to a minimal shell so the user still gets an answer
+        detail = {
+          id: payload.marketId!,
+          title: payload.contextNote ?? `Market ${payload.marketId}`,
+          category: 'unknown',
+          topics: [],
+          status: 'open',
+          yesProbability: 0.5,
+          yesPrice: 0.5,
+          change24h: 0,
+          volume24h: 0,
+          liquidity: 0,
+          isHot: false,
+          isSpike: false,
+          polymarketUrl: 'https://polymarket.com',
+          updatedAt: new Date().toISOString(),
+          priceSeries: [],
+          volumeSeries: [],
+          description: payload.contextNote ?? 'Market detail unavailable; using fallback context.',
+        };
       }
     }
 
-    await incrementUsage(walletAddress, dateKey);
+    await withTimeout(incrementUsage(walletAddress, dateKey), 1200, null);
 
-    const history = await listQaLogs({
-      walletAddress,
-      marketId: isGlobal ? 'global' : payload.marketId!,
-      limit: 5,
-    });
+    const history =
+      (await withTimeout(
+        listQaLogs({
+          walletAddress,
+          marketId: isGlobal ? 'global' : payload.marketId!,
+          limit: 5,
+        }),
+        1800,
+        { items: [] }
+      )) ?? { items: [] };
 
-    const answer = await askAiQuestion({
-      market: detail,
-      question: payload.question,
-      contextNote: payload.contextNote,
-      history: history
-        .map((entry) => ({
-          question: entry.question,
-          answer: entry.answer,
-        }))
-        .reverse(),
-      timeoutMs: 20_000,
-    });
+    let aiAnswer: string | null = null;
+    try {
+      aiAnswer = await askAiQuestion({
+        market: detail,
+        question: payload.question,
+        contextNote: payload.contextNote,
+        history: history
+          .map((entry) => ({
+            question: entry.question,
+            answer: entry.answer,
+          }))
+          .reverse(),
+        timeoutMs: 20_000,
+      });
+    } catch (err) {
+      console.warn('[api] ask ai call failed', err);
+    }
 
-    if (!answer) {
-      const duration = Date.now() - startedAt;
-      const timedOut = duration >= 19_500;
+    const duration = Date.now() - startedAt;
+
+    if (!aiAnswer) {
+      const timedOut = duration >= 19_000;
+      const provider = currentProvider();
       logTelemetry({
         walletAddress,
         marketId: payload.marketId,
@@ -124,12 +169,17 @@ const handler = async (request: NextRequest) => {
       });
       return failure(
         timedOut ? 'ASK_TIMEOUT' : 'ASK_FAILED',
-        timedOut ? 'AI took too long. Please try again.' : 'Unable to generate an answer.',
-        { status: timedOut ? 504 : 502 }
+        timedOut ? 'AI timed out. Please try again.' : 'AI could not generate an answer.',
+        {
+          status: timedOut ? 504 : 502,
+          details: { provider },
+        }
       );
     }
 
-    const redaction = redactAnswer(answer.trim());
+    const finalAnswer = aiAnswer;
+
+    const redaction = redactAnswer(finalAnswer.trim());
     const safe = await isAnswerSafe(redaction.text);
     if (!safe) {
       return failure('ASK_OUTPUT_BLOCKED', 'Answer blocked by safety rules.', {
@@ -138,12 +188,16 @@ const handler = async (request: NextRequest) => {
       });
     }
 
-    await logQaInteraction({
-      walletAddress: payload.walletAddress,
-      marketId: isGlobal ? 'global' : payload.marketId!,
-      question: payload.question,
-      answer: redaction.text,
-    });
+    await withTimeout(
+      logQaInteraction({
+        walletAddress: payload.walletAddress,
+        marketId: isGlobal ? 'global' : payload.marketId!,
+        question: payload.question,
+        answer: redaction.text,
+      }),
+      1500,
+      null
+    );
 
     const remaining = Math.max(limit - (used + 1), 0);
 
@@ -152,6 +206,7 @@ const handler = async (request: NextRequest) => {
       marketId: payload.marketId,
       success: true,
       durationMs: Date.now() - startedAt,
+      reason: aiAnswer ? 'ok' : 'fallback',
       remainingQuota: remaining,
     });
 

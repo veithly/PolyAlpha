@@ -76,11 +76,25 @@ export async function listContributionsByMarket(
     : undefined;
   const limit = clampLimit(options.limit);
   const statuses = options.statuses ?? ['approved'];
-  const where: Prisma.UserContributionWhereInput = {
+  const statusWhere = buildStatusWhere(statuses);
+  const baseWhere: Prisma.UserContributionWhereInput = {
     ...(marketId ? { marketId } : {}),
     parentId: options.parentId ? Number(options.parentId) : null,
-    ...buildStatusWhere(statuses),
   };
+
+  const hasStatusFilter = statusWhere && Object.keys(statusWhere).length > 0;
+
+  const where: Prisma.UserContributionWhereInput = normalizedWallet
+    ? hasStatusFilter
+      ? {
+          ...baseWhere,
+          OR: [statusWhere, { walletAddress: normalizedWallet }],
+        }
+      : { ...baseWhere }
+    : {
+        ...baseWhere,
+        ...statusWhere,
+      };
 
   if (options.cursor) {
     const cursorId = Number(options.cursor);

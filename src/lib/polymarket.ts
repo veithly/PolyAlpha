@@ -62,10 +62,11 @@ type PolymarketMarket = {
   volumeHistory?: PolymarketSeriesEntry[];
   priceSeries?: PolymarketSeriesEntry[];
   volumeSeries?: PolymarketSeriesEntry[];
-  tokens?: { outcome?: string; price?: number }[];
+  tokens?: { outcome?: string; price?: number; token_id?: string; tokenId?: string; id?: string }[];
   active?: boolean;
   closed?: boolean;
   archived?: boolean;
+  clobTokenIds?: string[] | string;
 };
 
 type PolymarketSeriesEntry = {
@@ -99,6 +100,9 @@ type PublicSearchResponse = {
 
 const tagCache = new Map<Topic, string | null>();
 const SERIES_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+const CLOB_PRICE_INTERVAL = '1m';
+const CLOB_PRICE_FIDELITY = Number(process.env.POLYMARKET_PRICE_FIDELITY ?? 60);
+const CLOB_BASE = 'https://clob.polymarket.com';
 
 function firstFinite(
   ...candidates: Array<number | string | null | undefined>
@@ -290,12 +294,19 @@ export async function fetchMarketDetailFromPolymarket(
   const market = marketData as PolymarketMarket;
   const priceSeries = market.priceSeries ?? market.priceHistory ?? ([] as PolymarketSeriesEntry[]);
   const volumeSeries = market.volumeSeries ?? market.volumeHistory ?? ([] as PolymarketSeriesEntry[]);
+  const normalizedPriceSeries = normalizeSeries(priceSeries, 'price');
+
+  const shouldBackfillSeries = isSeriesTooShort(normalizedPriceSeries);
+  const clobSeries = shouldBackfillSeries
+    ? await fetchPriceHistoryFromClob(market)
+    : [];
+  const mergedPriceSeries = mergeSeries(normalizedPriceSeries, clobSeries);
 
   return {
     ...summary,
     description: market.description,
     createdAt: market.createdAt ?? market.createdTime ?? summary.updatedAt,
-    priceSeries: normalizeSeries(priceSeries, 'price'),
+    priceSeries: mergedPriceSeries,
     volumeSeries: normalizeSeries(volumeSeries, 'volume'),
   };
 }
@@ -580,6 +591,96 @@ function normalizeSeries(
       };
     })
     .filter(Boolean) as TimeSeriesPoint[];
+}
+
+function mergeSeries(...series: TimeSeriesPoint[][]): TimeSeriesPoint[] {
+  if (!series.length) return [];
+  const map = new Map<string, TimeSeriesPoint>();
+
+  series
+    .flat()
+    .filter((point) => point && Number.isFinite(point.value))
+    .forEach((point) => {
+      const ts = toIsoTimestamp(point.timestamp);
+      map.set(ts, { timestamp: ts, value: point.value });
+    });
+
+  return Array.from(map.entries())
+    .sort((a, b) => Date.parse(a[0]) - Date.parse(b[0]))
+    .map(([, point]) => point);
+}
+
+function isSeriesTooShort(series: TimeSeriesPoint[]): boolean {
+  if (!series.length) return true;
+  const first = series[0];
+  const last = series[series.length - 1];
+  const spanMs = Date.parse(last.timestamp) - Date.parse(first.timestamp);
+  const minSpanMs = 3 * 24 * 60 * 60 * 1000;
+  return series.length < 10 || !Number.isFinite(spanMs) || spanMs < minSpanMs;
+}
+
+async function fetchPriceHistoryFromClob(market: PolymarketMarket): Promise<TimeSeriesPoint[]> {
+  const tokenId = selectYesTokenId(market);
+  if (!tokenId) return [];
+
+  const url = new URL('/prices-history', CLOB_BASE);
+  url.searchParams.set('market', tokenId);
+  url.searchParams.set('interval', CLOB_PRICE_INTERVAL);
+  url.searchParams.set('fidelity', String(Math.max(CLOB_PRICE_FIDELITY, 10)));
+
+  const payload = await fetchJson<{ history?: { t?: number | string; p?: number | string }[] | null }>(
+    url,
+    60,
+    Math.max(FETCH_TIMEOUT_MS, 10000)
+  );
+
+  const history = payload?.history ?? [];
+  if (!Array.isArray(history) || !history.length) return [];
+
+  return history
+    .map((entry) => {
+      const value = typeof entry.p === 'number' ? entry.p : Number(entry.p ?? NaN);
+      if (!Number.isFinite(value)) return null;
+      return {
+        timestamp: toIsoTimestamp(entry.t),
+        value,
+      } as TimeSeriesPoint;
+    })
+    .filter(Boolean) as TimeSeriesPoint[];
+}
+
+function selectYesTokenId(market: PolymarketMarket): string | null {
+  const parsedClobIds = parseTokenIds(market.clobTokenIds);
+  const yesTokenFromTokens = market.tokens?.find((t) =>
+    typeof t.outcome === 'string' ? /yes|up|over|winner/i.test(t.outcome) : false
+  );
+
+  const tokenIdCandidate =
+    yesTokenFromTokens?.token_id ??
+    yesTokenFromTokens?.tokenId ??
+    yesTokenFromTokens?.id ??
+    parsedClobIds[0] ??
+    market.tokens?.[0]?.token_id ??
+    market.tokens?.[0]?.tokenId ??
+    market.tokens?.[0]?.id ??
+    null;
+
+  return tokenIdCandidate ? String(tokenIdCandidate) : null;
+}
+
+function parseTokenIds(value: PolymarketMarket['clobTokenIds']): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) return value.map((v) => String(v));
+  if (typeof value === 'string') {
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v));
+    } catch {
+      // fall through
+    }
+    return [value];
+  }
+  return [];
 }
 
 function toIsoTimestamp(value?: string | number): string {

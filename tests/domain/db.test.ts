@@ -25,6 +25,7 @@ type ContributionRecord = {
   walletAddress: string;
   marketId: string;
   content: string;
+  parentId: number | null;
   upvotes: number;
   status: 'pending' | 'approved' | 'hidden' | 'flagged' | 'rejected' | 'needs_review';
   createdAt: Date;
@@ -204,6 +205,7 @@ vi.mock('../../src/lib/prisma', () => {
           walletAddress: data.walletAddress ?? '',
           marketId: data.marketId ?? '',
           content: data.content ?? '',
+          parentId: data.parentId ?? null,
           upvotes: data.upvotes ?? 0,
           status: (data.status as ContributionRecord['status']) ?? 'pending',
           createdAt: new Date(),
@@ -220,26 +222,58 @@ vi.mock('../../src/lib/prisma', () => {
         where?: {
           marketId?: string;
           walletAddress?: string;
+          parentId?: number | null;
           status?:
             | ContributionRecord['status']
             | { in: ContributionRecord['status'][] };
           id?: { lt: number };
+          OR?: {
+            walletAddress?: string;
+            status?:
+              | ContributionRecord['status']
+              | { in: ContributionRecord['status'][] };
+          }[];
         };
         take?: number;
         include?: { upvoteRecords?: { where: { walletAddress: string } } };
       }) => {
-        let rows = [...store.contributions.values()].filter((item) => {
-          if (where.marketId && item.marketId !== where.marketId) return false;
-          if (where.walletAddress && item.walletAddress !== where.walletAddress)
+        const { OR, ...baseWhere } = where;
+
+        const matches = (
+          item: ContributionRecord,
+          clause: Partial<ContributionRecord> & {
+            status?:
+              | ContributionRecord['status']
+              | { in: ContributionRecord['status'][] };
+            id?: { lt: number };
+          }
+        ) => {
+          if (clause.marketId && item.marketId !== clause.marketId) return false;
+          if (clause.walletAddress && item.walletAddress !== clause.walletAddress)
             return false;
-          if (where.status) {
-            if (typeof where.status === 'string') {
-              if (item.status !== where.status) return false;
-            } else if (where.status.in?.length) {
-              if (!where.status.in.includes(item.status)) return false;
+          if (clause.parentId !== undefined) {
+            if (clause.parentId === null) {
+              if (item.parentId !== null) return false;
+            } else if (item.parentId !== clause.parentId) {
+              return false;
             }
           }
-          if (where.id?.lt && !(item.id < where.id.lt)) return false;
+          if (clause.status) {
+            if (typeof clause.status === 'string') {
+              if (item.status !== clause.status) return false;
+            } else if (clause.status.in?.length) {
+              if (!clause.status.in.includes(item.status)) return false;
+            }
+          }
+          if (clause.id?.lt && !(item.id < clause.id.lt)) return false;
+          return true;
+        };
+
+        let rows = [...store.contributions.values()].filter((item) => {
+          if (!matches(item, baseWhere)) return false;
+          if (OR?.length) {
+            return OR.some((clause) => matches(item, clause));
+          }
           return true;
         });
 
@@ -559,6 +593,25 @@ describe('SQLite persistence services (Prisma abstraction)', () => {
     expect(result.items).toHaveLength(1);
     expect(result.items[0].content).toBe('My thesis');
     expect(result.items[0].status).toBe('pending');
+  });
+
+  it('includes viewer pending contribution in market list', async () => {
+    await createContribution({
+      walletAddress: '0xabc',
+      marketId: 'm-100',
+      content: 'Viewer post',
+    });
+
+    const asViewer = await listContributionsByMarket('m-100', {
+      viewerWallet: '0xabc',
+    });
+    expect(asViewer.items).toHaveLength(1);
+    expect(asViewer.items[0].status).toBe('pending');
+
+    const asOther = await listContributionsByMarket('m-100', {
+      viewerWallet: '0xdef',
+    });
+    expect(asOther.items).toHaveLength(0);
   });
 
   it('rejects invalid attachment urls', async () => {

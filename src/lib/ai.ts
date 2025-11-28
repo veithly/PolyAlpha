@@ -95,6 +95,7 @@ export async function askAiQuestion({
   question,
   contextNote,
   history,
+  timeoutMs,
 }: {
   market: MarketDetail;
   question: string;
@@ -102,7 +103,7 @@ export async function askAiQuestion({
   history?: { question: string; answer: string }[];
   timeoutMs?: number;
 }): Promise<string | null> {
-  const timeoutMs = Math.max(2000, Math.min(60_000, timeoutMs ?? 20_000));
+  const effectiveTimeoutMs = Math.max(2000, Math.min(60_000, timeoutMs ?? 20_000));
   return promiseWithTimeout(
     callChat([
       {
@@ -114,7 +115,7 @@ export async function askAiQuestion({
         content: buildAskPrompt(question, market, history, contextNote),
       },
     ]),
-    timeoutMs
+    effectiveTimeoutMs
   );
 }
 
@@ -318,6 +319,10 @@ function selectProvider(): 'flock' | 'openai' | null {
   return null;
 }
 
+export function currentProvider() {
+  return selectProvider();
+}
+
 async function callOpenAI(messages: ChatMessage[]): Promise<string | null> {
   const apiKey = process.env.OPENAI_API_KEY;
   if (!apiKey) return null;
@@ -432,8 +437,8 @@ async function callFlock(messages: ChatMessage[]): Promise<string | null> {
     if (!apiKey) return null;
 
     const endpoint = getFlockApiUrl();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: buildFlockHeaders(apiKey, endpoint),
@@ -468,8 +473,8 @@ async function callFlockStream(
     if (!apiKey) return null;
 
     const endpoint = getFlockApiUrl();
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 12000);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 20000);
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: buildFlockHeaders(apiKey, endpoint),
