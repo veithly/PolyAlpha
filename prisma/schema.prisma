@@ -1,0 +1,144 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model UserPreference {
+  id           Int      @id @default(autoincrement())
+  walletAddress String   @unique @map("wallet_address")
+  topics       String
+  notifyDaily  Boolean  @map("notify_daily") @default(false)
+  channels     String?  @map("channels_json")
+  topicWeights String?  @map("topic_weights_json")
+  askLimit     Int?     @map("ask_limit")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @default(now()) @map("updated_at")
+}
+
+model AiInsight {
+  id          Int      @id @default(autoincrement())
+  dateKey     String   @unique @map("date_key")
+  content     String
+  topics      String?
+  generatedAt DateTime @default(now()) @map("generated_at")
+  cadence     String   @default("daily")
+
+  @@unique([cadence, dateKey])
+  @@index([cadence])
+}
+
+model MarketSummary {
+  id          Int      @id @default(autoincrement())
+  marketId    String   @unique @map("market_id")
+  content     String
+  language    String   @default("en")
+  modelName   String? @map("model")
+  generatedAt DateTime @default(now()) @map("generated_at")
+}
+
+model UserContribution {
+  id            Int      @id @default(autoincrement())
+  walletAddress String   @map("wallet_address")
+  marketId      String   @map("market_id")
+  content       String
+  attachmentUrl String?  @map("attachment_url")
+  upvotes       Int      @default(0)
+  status        String   @default("pending")
+  parentId      Int?     @map("parent_id")
+  parent        UserContribution? @relation("ContributionReplies", fields: [parentId], references: [id])
+  replies       UserContribution[] @relation("ContributionReplies")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @default(now()) @map("updated_at")
+  upvoteRecords ContributionUpvote[]
+  auditLogs     ContributionAuditLog[]
+
+  @@index([marketId, status])
+  @@index([parentId])
+}
+
+model QaLog {
+  id            Int      @id @default(autoincrement())
+  walletAddress String?  @map("wallet_address")
+  marketId      String?  @map("market_id")
+  question      String
+  answer        String
+  createdAt     DateTime @default(now()) @map("created_at")
+}
+
+model AskAiQuota {
+  id            Int      @id @default(autoincrement())
+  walletAddress String   @map("wallet_address")
+  dateKey       String   @map("date_key")
+  count         Int      @default(0)
+
+  @@unique([walletAddress, dateKey])
+}
+
+model CachedMarket {
+  id             Int      @id @default(autoincrement())
+  marketId       String   @unique @map("market_id")
+  title          String
+  category       String
+  topics         String
+  status         String
+  yesProbability Float    @map("yes_probability")
+  yesPrice       Float    @map("yes_price")
+  change24h      Float    @map("change_24h")
+  volume24h      Float    @map("volume_24h")
+  totalVolume    Float?   @map("total_volume")
+  liquidity      Float?   
+  polymarketUrl  String   @map("polymarket_url")
+  isHot          Boolean  @map("is_hot")
+  isSpike        Boolean  @map("is_spike")
+  updatedAt      DateTime @default(now()) @map("updated_at")
+}
+
+model ContributionUpvote {
+  id             Int      @id @default(autoincrement())
+  contributionId Int      @map("contribution_id")
+  walletAddress  String   @map("wallet_address")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  contribution UserContribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  @@unique([contributionId, walletAddress])
+}
+
+model ContributionAuditLog {
+  id             Int      @id @default(autoincrement())
+  contributionId Int      @map("contribution_id")
+  previousStatus String   @map("previous_status")
+  newStatus      String   @map("new_status")
+  actor          String
+  reason         String?
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  contribution UserContribution @relation(fields: [contributionId], references: [id], onDelete: Cascade)
+
+  @@index([contributionId])
+}
+
+model MarketWatchlist {
+  id            Int      @id @default(autoincrement())
+  walletAddress String   @map("wallet_address")
+  marketId      String   @map("market_id")
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@unique([walletAddress, marketId])
+  @@index([walletAddress])
+}
+
+model GuardrailLog {
+  id        Int      @id @default(autoincrement())
+  question  String
+  result    String
+  reason    String
+  model     String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([createdAt])
+}

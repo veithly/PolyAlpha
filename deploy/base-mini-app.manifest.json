@@ -1,0 +1,20 @@
+{
+  "id": "polyalpha-mini-app",
+  "name": "Polymarket AI Alpha",
+  "description": "AI insights, Ask AI, and Polymarket market heatmaps delivered inside Base.",
+  "version": "1.0.0",
+  "homepageUrl": "https://polyalpha.vercel.app",
+  "entryPointUrl": "https://polyalpha.vercel.app/?miniapp=base",
+  "iconUrl": "https://polyalpha.vercel.app/assets/polyalpha-icon.png",
+  "splashImageUrl": "https://polyalpha.vercel.app/assets/polyalpha-splash.png",
+  "contactEmail": "team@polyalpha.app",
+  "termsUrl": "https://polyalpha-ehwecapdz-ricky-shaos-projects.vercel.app/terms",
+  "privacyUrl": "https://polyalpha-ehwecapdz-ricky-shaos-projects.vercel.app/privacy",
+  "supportedChains": ["base-mainnet"],
+  "permissions": ["wallet", "signMessage"],
+  "allowedOrigins": ["https://polyalpha.vercel.app"],
+  "links": {
+    "twitter": "https://twitter.com/your-handle",
+    "github": "https://github.com/your-org/polyalpha"
+  }
+}

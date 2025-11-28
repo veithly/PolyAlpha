@@ -1,0 +1,14 @@
+name = "polyalpha-worker"
+main = ".open-next/worker.js"
+compatibility_date = "2024-12-30"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
+workers_dev = true
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "polyalpha-db"
+database_id = "aecafc19-f80e-49d4-a654-ca205ed69fe8"

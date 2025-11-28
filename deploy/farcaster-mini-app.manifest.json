@@ -1,0 +1,18 @@
+{
+  "accountAssociation": {
+    "header": "",
+    "payload": "",
+    "signature": ""
+  },
+  "miniapp": {
+    "version": "1",
+    "name": "PolyAlpha",
+    "iconUrl": "https://your-prod-domain.example/assets/icon.png",
+    "homeUrl": "https://your-prod-domain.example/?miniapp=farcaster",
+    "imageUrl": "https://your-prod-domain.example/api/og/miniapp",
+    "buttonTitle": "Launch",
+    "splashImageUrl": "https://your-prod-domain.example/assets/splash.png",
+    "splashBackgroundColor": "#0a1428",
+    "webhookUrl": "https://your-prod-domain.example/api/farcaster/webhook"
+  }
+}
